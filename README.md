@@ -39,12 +39,6 @@ When using Large Language Models (LLMs) as judges to evaluate other models or sy
 pip install judgy
 ```
 
-### With Plotting Support
-
-```bash
-pip install judgy[plotting]
-```
-
 ### Development Installation
 
 ```bash
