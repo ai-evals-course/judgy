@@ -1,10 +1,31 @@
-# judgy
+<div align="center">
+  <img src="judgy.png" alt="Judgy - LLM Judge Bias Correction" width="300">
+  
+  # judgy
+  
+  **A Python library for estimating success rates when using LLM judges for evaluation.**
+  
+  [![PyPI version](https://badge.fury.io/py/judgy.svg)](https://badge.fury.io/py/judgy)
+  [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+  [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+</div>
 
-A Python library for estimating success rates when using LLM judges for evaluation.
+---
 
-[![PyPI version](https://badge.fury.io/py/judgy.svg)](https://badge.fury.io/py/judgy)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+## Table of Contents
+
+- [Overview](#overview)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [How It Works](#how-it-works)
+- [API Reference](#api-reference)
+- [Real-World Usage Pattern](#real-world-usage-pattern)
+- [Requirements](#requirements)
+- [Testing](#testing)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
 
 ## Overview
 

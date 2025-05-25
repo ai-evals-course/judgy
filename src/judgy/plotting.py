@@ -446,3 +446,326 @@ def run_fnr_fpr_experiment(
         n_test_negative,
         n_unlabeled,
     )
+
+
+def run_label_size_experiment(
+    true_failure_rate: float = 0.2,
+    fixed_tpr: float = 0.9,
+    fixed_tnr: float = 0.85,
+    label_sizes: Union[List[int], np.ndarray] = None,
+    n_unlabeled: int = 1000,
+    bootstrap_iterations: int = 2000,
+    random_seed: Union[int, None] = 42,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Run label size sensitivity experiment to show how estimation improves with more labels.
+
+    Args:
+        true_failure_rate: True failure rate in the unlabeled data.
+        fixed_tpr: Fixed True Positive Rate (sensitivity) for the judge.
+        fixed_tnr: Fixed True Negative Rate (specificity) for the judge.
+        label_sizes: Array of total label set sizes to test. If None, uses default range.
+        n_unlabeled: Number of unlabeled samples.
+        bootstrap_iterations: Number of bootstrap iterations.
+        random_seed: Random seed for reproducibility.
+
+    Returns:
+        Tuple of (label_sizes, estimates, lower_bounds, upper_bounds, raw_rates, ci_widths)
+    """
+    from .core import estimate_success_rate
+    from .synthetic import generate_test_data, generate_unlabeled_data
+
+    if random_seed is not None:
+        np.random.seed(random_seed)
+
+    if label_sizes is None:
+        # Default range: from 20 to 200 labels in steps
+        label_sizes = np.array([20, 30, 40, 50, 75, 100, 150, 200, 300, 400])
+
+    label_sizes = np.asarray(label_sizes)
+    true_success_rate = 1 - true_failure_rate
+
+    estimates = []
+    lower_bounds = []
+    upper_bounds = []
+    raw_rates = []
+    ci_widths = []
+
+    for total_labels in label_sizes:
+        # Keep balanced ratio of positive/negative labels
+        n_positive = total_labels // 2
+        n_negative = total_labels - n_positive
+
+        # Generate test data with fixed TPR/TNR
+        test_labels, test_preds = generate_test_data(
+            n_positive, n_negative, fixed_tpr, fixed_tnr, random_seed=42
+        )
+
+        # Generate unlabeled data (same for all experiments)
+        unlabeled_preds = generate_unlabeled_data(
+            n_unlabeled, true_success_rate, fixed_tpr, fixed_tnr, random_seed=42
+        )
+
+        # Calculate raw observed success rate
+        raw_success_rate = unlabeled_preds.sum() / len(unlabeled_preds)
+        raw_rates.append(raw_success_rate)
+
+        try:
+            # Estimate success rate
+            theta_hat, lower, upper = estimate_success_rate(
+                test_labels,
+                test_preds,
+                unlabeled_preds,
+                bootstrap_iterations=bootstrap_iterations,
+            )
+            estimates.append(theta_hat)
+            lower_bounds.append(lower)
+            upper_bounds.append(upper)
+            ci_widths.append(upper - lower)
+        except (ValueError, RuntimeError):
+            estimates.append(np.nan)
+            lower_bounds.append(np.nan)
+            upper_bounds.append(np.nan)
+            ci_widths.append(np.nan)
+
+    return (
+        label_sizes,
+        np.array(estimates),
+        np.array(lower_bounds),
+        np.array(upper_bounds),
+        np.array(raw_rates),
+        np.array(ci_widths),
+    )
+
+
+def plot_label_size_sensitivity(
+    label_sizes: Union[List[int], np.ndarray],
+    estimates: Union[List[float], np.ndarray],
+    lower_bounds: Union[List[float], np.ndarray],
+    upper_bounds: Union[List[float], np.ndarray],
+    raw_rates: Union[List[float], np.ndarray],
+    ci_widths: Union[List[float], np.ndarray],
+    true_rate: float,
+    fixed_tpr: float,
+    fixed_tnr: float,
+    n_unlabeled: int,
+    figsize: Tuple[int, int] = (12, 5),
+    save_path: Optional[str] = None,
+    save_plots: bool = False,
+) -> None:
+    """
+    Create label size sensitivity plots showing how estimation improves with more labels.
+
+    Args:
+        label_sizes: Array of total label set sizes.
+        estimates: Corrected estimates for each label size.
+        lower_bounds: Lower bounds for each label size.
+        upper_bounds: Upper bounds for each label size.
+        raw_rates: Raw observed rates for each label size.
+        ci_widths: Confidence interval widths for each label size.
+        true_rate: The true success rate to show as reference line.
+        fixed_tpr: Fixed TPR value used in experiment.
+        fixed_tnr: Fixed TNR value used in experiment.
+        n_unlabeled: Number of unlabeled samples.
+        figsize: Figure size as (width, height) tuple.
+        save_path: If provided, saves the plot to this path.
+        save_plots: If True, saves each subplot individually to a plots folder.
+
+    Raises:
+        ImportError: If matplotlib is not installed.
+    """
+    _check_matplotlib()
+
+    fig, axes = plt.subplots(1, 2, figsize=figsize)
+
+    # Convert to numpy arrays and percentages
+    label_sizes = np.asarray(label_sizes)
+    estimates = np.asarray(estimates) * 100
+    lower_bounds = np.asarray(lower_bounds) * 100
+    upper_bounds = np.asarray(upper_bounds) * 100
+    raw_rates = np.asarray(raw_rates) * 100
+    ci_widths = np.asarray(ci_widths) * 100
+
+    true_rate_pct = true_rate * 100
+    tpr_pct = fixed_tpr * 100
+    tnr_pct = fixed_tnr * 100
+
+    # Left plot: Estimates vs. Label Size
+    axes[0].fill_between(
+        label_sizes,
+        lower_bounds,
+        upper_bounds,
+        alpha=0.3,
+        color="lightblue",
+        label="95% CI",
+    )
+    axes[0].plot(
+        label_sizes,
+        estimates,
+        "x-",
+        color="blue",
+        markersize=8,
+        linewidth=2,
+        label="Corrected θ̂",
+    )
+    axes[0].plot(
+        label_sizes, raw_rates, "o", color="red", markersize=6, label="Raw k/m"
+    )
+    axes[0].axhline(
+        true_rate_pct,
+        linestyle="--",
+        color="black",
+        linewidth=1.5,
+        label=f"True θ = {true_rate_pct:.0f}%",
+    )
+
+    axes[0].set_xlabel("Number of labeled examples", fontsize=12)
+    axes[0].set_ylabel("Estimated success rate θ̂ (%)", fontsize=12)
+    axes[0].set_title(
+        f"Estimates vs. Label Size (TPR={tpr_pct:.0f}%, TNR={tnr_pct:.0f}%)",
+        fontsize=12,
+    )
+    axes[0].grid(True, alpha=0.3)
+    axes[0].legend()
+    axes[0].set_ylim(0, 100)
+
+    # Right plot: CI Width vs. Label Size
+    valid_mask = ~np.isnan(ci_widths)
+    if np.any(valid_mask):
+        axes[1].plot(
+            label_sizes[valid_mask],
+            ci_widths[valid_mask],
+            "o-",
+            color="purple",
+            markersize=6,
+            linewidth=2,
+            label="CI Width",
+        )
+
+    axes[1].set_xlabel("Number of labeled examples", fontsize=12)
+    axes[1].set_ylabel("95% CI width (%)", fontsize=12)
+    axes[1].set_title("Confidence Interval Width vs. Label Size", fontsize=12)
+    axes[1].grid(True, alpha=0.3)
+    axes[1].legend()
+
+    # Add sample size annotation
+    axes[0].text(
+        0.02,
+        0.98,
+        f"Fixed TPR = {tpr_pct:.0f}%, TNR = {tnr_pct:.0f}%\n"
+        f"m = {n_unlabeled} unlabeled examples",
+        transform=axes[0].transAxes,
+        fontsize=9,
+        verticalalignment="top",
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+    )
+
+    axes[1].text(
+        0.02,
+        0.98,
+        f"Narrower CIs with more labels\n"
+        f"True θ = {true_rate_pct:.0f}%",
+        transform=axes[1].transAxes,
+        fontsize=9,
+        verticalalignment="top",
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+    )
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+
+    if save_plots:
+        # Create plots directory if it doesn't exist
+        os.makedirs("plots", exist_ok=True)
+
+        # Save left plot (Estimates vs Label Size)
+        fig_left, ax_left = plt.subplots(figsize=(6, 5))
+        ax_left.fill_between(
+            label_sizes,
+            lower_bounds,
+            upper_bounds,
+            alpha=0.3,
+            color="lightblue",
+            label="95% CI",
+        )
+        ax_left.plot(
+            label_sizes,
+            estimates,
+            "x-",
+            color="blue",
+            markersize=8,
+            linewidth=2,
+            label="Corrected θ̂",
+        )
+        ax_left.plot(
+            label_sizes, raw_rates, "o", color="red", markersize=6, label="Raw k/m"
+        )
+        ax_left.axhline(
+            true_rate_pct,
+            linestyle="--",
+            color="black",
+            linewidth=1.5,
+            label=f"True θ = {true_rate_pct:.0f}%",
+        )
+        ax_left.set_xlabel("Number of labeled examples", fontsize=12)
+        ax_left.set_ylabel("Estimated success rate θ̂ (%)", fontsize=12)
+        ax_left.set_title(
+            f"Estimates vs. Label Size (TPR={tpr_pct:.0f}%, TNR={tnr_pct:.0f}%)",
+            fontsize=12,
+        )
+        ax_left.grid(True, alpha=0.3)
+        ax_left.legend()
+        ax_left.set_ylim(0, 100)
+        ax_left.text(
+            0.02,
+            0.98,
+            f"Fixed TPR = {tpr_pct:.0f}%, TNR = {tnr_pct:.0f}%\n"
+            f"m = {n_unlabeled} unlabeled examples",
+            transform=ax_left.transAxes,
+            fontsize=9,
+            verticalalignment="top",
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+        )
+        plt.tight_layout()
+        plt.savefig("plots/label_size_estimates.png", dpi=300, bbox_inches="tight")
+        plt.close(fig_left)
+
+        # Save right plot (CI Width vs Label Size)
+        fig_right, ax_right = plt.subplots(figsize=(6, 5))
+        if np.any(valid_mask):
+            ax_right.plot(
+                label_sizes[valid_mask],
+                ci_widths[valid_mask],
+                "o-",
+                color="purple",
+                markersize=6,
+                linewidth=2,
+                label="CI Width",
+            )
+        ax_right.set_xlabel("Number of labeled examples", fontsize=12)
+        ax_right.set_ylabel("95% CI width (%)", fontsize=12)
+        ax_right.set_title("Confidence Interval Width vs. Label Size", fontsize=12)
+        ax_right.grid(True, alpha=0.3)
+        ax_right.legend()
+        ax_right.text(
+            0.02,
+            0.98,
+            f"Narrower CIs with more labels\n"
+            f"True θ = {true_rate_pct:.0f}%",
+            transform=ax_right.transAxes,
+            fontsize=9,
+            verticalalignment="top",
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+        )
+        plt.tight_layout()
+        plt.savefig("plots/label_size_ci_width.png", dpi=300, bbox_inches="tight")
+        plt.close(fig_right)
+
+        print(
+            "Individual plots saved to plots/label_size_estimates.png and "
+            "plots/label_size_ci_width.png"
+        )
+
+    plt.show()
